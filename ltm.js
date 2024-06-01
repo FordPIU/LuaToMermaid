@@ -29,16 +29,18 @@ function generateMermaid(ast) {
         node.body.forEach((statement) => traverseNode(statement, parentNodeId));
         break;
       case "IfStatement":
-        const conditionNode = createNode(`if ${node.clauses[0].condition.raw}`);
-        currentNodeId = conditionNode;
+        const ifConditionNode = createNode(
+          `if ${node.clauses[0].condition.raw}`
+        );
+        currentNodeId = ifConditionNode;
         if (parentNodeId) {
           edges.push({ from: parentNodeId, to: currentNodeId });
         }
         node.clauses.forEach((clause, index) => {
-          const clauseNodeId = traverseNode(clause.body, conditionNode);
+          const clauseNodeId = traverseNode(clause.body, ifConditionNode);
           if (index > 0) {
             edges.push({
-              from: conditionNode,
+              from: ifConditionNode,
               to: clauseNodeId,
               condition: index === 1 ? "No" : "Else",
             });
@@ -53,13 +55,39 @@ function generateMermaid(ast) {
         }
         traverseNode(node.body, whileNode);
         break;
-      case "ForNumericStatement":
-        const forNode = createNode(`for ${node.variable.name}`);
-        currentNodeId = forNode;
+      case "RepeatStatement":
+        const repeatNode = createNode("repeat");
+        currentNodeId = repeatNode;
         if (parentNodeId) {
           edges.push({ from: parentNodeId, to: currentNodeId });
         }
-        traverseNode(node.body, forNode);
+        traverseNode(node.body, repeatNode);
+        const untilNode = createNode(`until ${node.condition.raw}`);
+        edges.push({ from: repeatNode, to: untilNode });
+        break;
+      case "ForNumericStatement":
+        const forNumericNode = createNode(
+          `for ${node.variable.name} = ${node.start.raw}, ${node.end.raw}${
+            node.step ? `, ${node.step.raw}` : ""
+          }`
+        );
+        currentNodeId = forNumericNode;
+        if (parentNodeId) {
+          edges.push({ from: parentNodeId, to: currentNodeId });
+        }
+        traverseNode(node.body, forNumericNode);
+        break;
+      case "ForGenericStatement":
+        const forGenericNode = createNode(
+          `for ${node.variables
+            .map((v) => v.name)
+            .join(", ")} in ${node.iterators.map((i) => i.raw).join(", ")}`
+        );
+        currentNodeId = forGenericNode;
+        if (parentNodeId) {
+          edges.push({ from: parentNodeId, to: currentNodeId });
+        }
+        traverseNode(node.body, forGenericNode);
         break;
       case "FunctionDeclaration":
         const args = node.parameters.map((param) => param.name).join(", ");
@@ -103,6 +131,36 @@ function generateMermaid(ast) {
           edges.push({ from: parentNodeId, to: currentNodeId });
         }
         break;
+      case "TableConstructorExpression":
+        const tableNode = createNode(
+          `table { ${node.fields
+            .map((field) => `${field.key.raw} = ${field.value.raw}`)
+            .join(", ")} }`
+        );
+        currentNodeId = tableNode;
+        if (parentNodeId) {
+          edges.push({ from: parentNodeId, to: currentNodeId });
+        }
+        break;
+      case "LocalStatement":
+        const localNode = createNode(
+          `local ${node.variables.map((v) => v.name).join(", ")} = ${node.init
+            .map((i) => i.raw)
+            .join(", ")}`
+        );
+        currentNodeId = localNode;
+        if (parentNodeId) {
+          edges.push({ from: parentNodeId, to: currentNodeId });
+        }
+        break;
+      case "RepeatStatement":
+        const repeatConditionNode = createNode(`until ${node.condition.raw}`);
+        currentNodeId = repeatConditionNode;
+        if (parentNodeId) {
+          edges.push({ from: parentNodeId, to: currentNodeId });
+        }
+        traverseNode(node.body, repeatConditionNode);
+        break;
       default:
         if (Array.isArray(node)) {
           node.forEach((childNode) => traverseNode(childNode, parentNodeId));
@@ -120,22 +178,20 @@ function generateMermaid(ast) {
 
   traverseNode(ast);
 
-  let mermaidCode = "```mermaid\n";
-  mermaidCode += "graph TD;\n";
+  let mermaidCode = "graph TD;\n";
   nodes.forEach((node) => {
     mermaidCode += `  ${node.id}[${node.label}];\n`;
   });
   edges.forEach((edge) => {
     mermaidCode += `  ${edge.from}-->${edge.to};\n`;
   });
-  mermaidCode += "```";
 
   return mermaidCode;
 }
 
 function main() {
   const inputFilePath = process.argv[2];
-  const outputFilePath = "output.mermaid.md";
+  const outputFilePath = "output.mermaid";
 
   if (!inputFilePath) {
     console.error("Please provide a Lua file path as an argument.");
@@ -146,6 +202,10 @@ function main() {
   const mermaidCode = generateMermaid(ast);
 
   fs.writeFileSync(outputFilePath, mermaidCode);
+  fs.writeFileSync(
+    outputFilePath + ".md",
+    "```mermaid\n" + mermaidCode + "\n```"
+  );
   console.log(`Mermaid diagram saved to ${outputFilePath}`);
 }
 
